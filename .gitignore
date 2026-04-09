@@ -1,0 +1,12 @@
+# 分析輸出（可重新執行 Analyze_market.py 生成）
+*.xlsx
+*.png
+
+# Python 快取
+__pycache__/
+*.pyc
+*.pyo
+
+# 系統檔
+.DS_Store
+Thumbs.db

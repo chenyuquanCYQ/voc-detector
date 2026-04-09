@@ -1,0 +1,127 @@
+/** @OnlyCurrentDoc */
+
+// ==========================================
+// 請在這裡填寫你剛剛取得的兩把金鑰
+// ==========================================
+const SERPER_API_KEY = 'YOUR_SERPER_API_KEY_HERE';
+const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
+
+const SEARCH_TASKS = [
+  { lang: "繁中", query: '電子鼻 OR 氣味檢測器 OR 氣體分析設備 OR 氣體分析儀器 新品', gl: 'tw', hl: 'zh-tw' },
+  { lang: "英文", query: 'electronic nose OR odor detector OR gas analyzer OR gas analysis equipment new product', gl: 'us', hl: 'en' },
+  { lang: "日文", query: '匂いセンサー OR 電子鼻 OR ガス分析装置 OR ガス分析計 新製品', gl: 'jp', hl: 'ja' },
+  { lang: "德文", query: 'elektronische Nase OR Geruchssensor OR Gasanalysator neues Produkt', gl: 'de', hl: 'de' },
+  { lang: "荷蘭文", query: 'elektronische neus OR geursensor OR gasanalysator nieuw product', gl: 'nl', hl: 'nl' },
+  { lang: "法文", query: 'nez électronique OR détecteur d\'odeur OR analyseur de gaz nouveau produit', gl: 'fr', hl: 'fr' },
+  { lang: "義大利文", query: 'naso elettronico OR rilevatore di odori OR analizzatore di gas nuovo prodotto', gl: 'it', hl: 'it' },
+  { lang: "瑞士", query: 'Gasanalysator OR analyseur de gaz OR electronic nose product', gl: 'ch', hl: 'de' },
+  { lang: "丹麥文", query: 'elektronisk næse OR lugtsensor OR gasanalysator nyt produkt', gl: 'dk', hl: 'da' },
+  { lang: "瑞典文", query: 'elektronisk näsa OR luktsensor OR gasanalysator ny produkt', gl: 'se', hl: 'sv' }
+];
+
+function runMarketResearch() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const existingData = sheet.getDataRange().getValues();
+  const existingProductNames = existingData.map(row => String(row[0]).toLowerCase().trim());
+  const today = new Date();
+  const formattedDate = Utilities.formatDate(today, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+
+  let allSearchContent = ""; // 用來收集 10 國的所有資料
+  console.log("🚀 開始出動 Serper 收集 10 國資料...");
+
+  // 1. 讓 Serper 連續搜尋 10 個國家 (只消耗 Serper 額度)
+  SEARCH_TASKS.forEach(task => {
+    const searchData = fetchSerperData(task.query, task.gl, task.hl);
+    if (searchData) {
+      allSearchContent += `\n\n=== 來自 ${task.lang} 的網頁資訊 ===\n${searchData}`;
+    }
+    Utilities.sleep(1000); // 稍微暫停 1 秒，保護 Serper API
+  });
+
+  if (allSearchContent === "") {
+    console.log("⚠️ 所有國家都沒有搜到資料。");
+    return;
+  }
+
+  console.log("📦 10 國資料收集完畢，準備交給 Gemini 進行一次性大盤點...");
+
+  // 2. 將收集到的巨量文字，一次性丟給 Gemini 分析 (只消耗 1 次 Gemini 額度)
+  const extractedProducts = analyzeWithGemini(allSearchContent);
+  let addedCount = 0;
+
+  if (extractedProducts && extractedProducts.length > 0) {
+    extractedProducts.forEach(product => {
+      const pName = String(product.product_name).toLowerCase().trim();
+      if (!existingProductNames.includes(pName) && product.product_name !== "無" && product.product_name !== "") {
+        sheet.appendRow([product.product_name, product.brand, product.features, product.url, formattedDate]);
+        existingProductNames.push(pName);
+        addedCount++;
+      }
+    });
+    console.log(`✅ 全球盤點完成！本次共新增了 ${addedCount} 筆新產品。`);
+  } else {
+    console.log(`⚠️ Gemini 分析完畢，但沒有發現符合條件的新產品。`);
+  }
+}
+
+function fetchSerperData(query, gl, hl) {
+  const url = 'https://google.serper.dev/search';
+  const payload = { "q": query, "gl": gl, "hl": hl, "num": 10 };
+  const options = {
+    'method': 'post',
+    'headers': { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const json = JSON.parse(response.getContentText());
+    if (json.organic && json.organic.length > 0) {
+      return json.organic.map(item => `標題: ${item.title}\n摘要: ${item.snippet}\n網址: ${item.link}`).join('\n\n');
+    }
+  } catch (e) {
+     console.log(`Serper 搜尋錯誤 (${gl}): ` + e);
+  }
+  return null;
+}
+
+function analyzeWithGemini(searchContent) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  
+  // 提示詞更新：告訴 AI 這是一份跨越十國的巨量資料
+  const prompt = `你是一個專業的醫療器材與科技產品市場分析師。
+請閱讀以下來自全球 10 個不同國家的 Google 搜尋結果，判斷其中是否有提及真實存在的「氣味檢測器」、「電子鼻」或「氣體分析設備/儀器」產品。
+如果有，請幫我萃取出所有符合的資訊，並【全部翻譯成繁體中文】。請特別留意與醫療器材、半導體感測器或呼氣分析相關的硬體技術。
+如果只是純學術論文或無關新聞，請忽略。
+
+跨國搜尋結果總匯：
+${searchContent}
+
+請嚴格使用以下 JSON 陣列格式回覆，不要包含任何其他文字或 Markdown 標記：
+[
+  {
+    "product_name": "產品名稱(保留原文或提供中文翻譯)",
+    "brand": "品牌或開發公司(保留原文)",
+    "features": "一句話總結產品核心特色與檢測標的(請用繁體中文)",
+    "url": "該資訊的來源網址"
+  }
+]
+如果沒有找到任何產品，請回覆 []`;
+
+  const payload = { "contents": [{"parts": [{"text": prompt}]}], "generationConfig": { "response_mime_type": "application/json" } };
+  const options = { 'method': 'post', 'headers': {'Content-Type': 'application/json'}, 'payload': JSON.stringify(payload), 'muteHttpExceptions': true };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const resultJson = JSON.parse(response.getContentText());
+    if (resultJson.error) {
+      console.log(`❌ Gemini API 發生錯誤: [${resultJson.error.code}] ${resultJson.error.message}`);
+      return [];
+    }
+    if (!resultJson.candidates) return [];
+    return JSON.parse(resultJson.candidates[0].content.parts[0].text);
+  } catch (e) {
+    console.log(`⚠️ 執行錯誤: ${e}`);
+    return [];
+  }
+}

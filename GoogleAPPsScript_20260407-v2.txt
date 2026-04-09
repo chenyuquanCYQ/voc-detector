@@ -1,0 +1,177 @@
+/** @OnlyCurrentDoc */
+
+// ==========================================
+// API 金鑰設定
+// ==========================================
+const SERPER_API_KEY = 'YOUR_SERPER_API_KEY_HERE';
+const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
+
+// ==========================================
+// 搜尋任務設定
+// 拆成兩類：
+//   A. 競品普查（不限新舊，找現有市售品）
+//   B. 新品雷達（找最新發表或眾籌產品）
+// ==========================================
+const SEARCH_TASKS = [
+
+  // ── A. 競品普查：日本市場（TANITA 等消費型品牌主力市場）──
+  { lang: "日文-消費品", query: 'ブレスチェッカー OR 口臭チェッカー OR 体臭センサー OR においセンサー 製品', gl: 'jp', hl: 'ja' },
+  { lang: "日文-品牌", query: 'TANITA においチェッカー OR ブレスチェッカー OR キュレル 体臭', gl: 'jp', hl: 'ja' },
+  { lang: "日文-Amazon", query: 'site:amazon.co.jp ブレスチェッカー OR 口臭測定器 OR 体臭チェッカー', gl: 'jp', hl: 'ja' },
+
+  // ── A. 競品普查：英文市場（Breathometer、iBreath 等）──
+  { lang: "英文-消費品", query: 'breath checker OR breath odor detector OR body odor sensor consumer product', gl: 'us', hl: 'en' },
+  { lang: "英文-Amazon", query: 'site:amazon.com breath odor tester OR halitosis detector OR body odor monitor', gl: 'us', hl: 'en' },
+  { lang: "英文-健康裝置", query: 'personal health sensor odor wearable bluetooth app 2024 2025', gl: 'us', hl: 'en' },
+
+  // ── A. 競品普查：繁中市場 ──
+  { lang: "繁中-消費品", query: '口臭檢測器 OR 體臭偵測 OR 口氣測試儀 推薦 評測 購買', gl: 'tw', hl: 'zh-tw' },
+  { lang: "繁中-電商", query: 'site:shopee.tw OR site:momo.com.tw 口臭 OR 體臭 檢測器 感測器', gl: 'tw', hl: 'zh-tw' },
+
+  // ── A. 競品普查：韓國市場（三星等消費電子大廠）──
+  { lang: "韓文-消費品", query: '구취측정기 OR 체취센서 OR 입냄새 측정 제품', gl: 'kr', hl: 'ko' },
+
+  // ── B. 新品雷達：英文（新創 / 眾籌）──
+  { lang: "英文-新品", query: 'electronic nose OR odor sensor new product launch 2024 2025 Kickstarter Indiegogo', gl: 'us', hl: 'en' },
+  { lang: "英文-氣體分析新品", query: 'gas analyzer OR breath analysis device new release CES 2024 2025', gl: 'us', hl: 'en' },
+
+  // ── B. 新品雷達：日文 ──
+  { lang: "日文-新品", query: 'においセンサー OR 電子鼻 OR ガス分析装置 新製品 2024 2025 スマートフォン連携', gl: 'jp', hl: 'ja' },
+
+  // ── B. 新品雷達：繁中 ──
+  { lang: "繁中-新品", query: '電子鼻 OR 氣味檢測器 OR 氣體分析設備 新品 2024 2025', gl: 'tw', hl: 'zh-tw' },
+
+  // ── B. 新品雷達：歐洲（德、法、荷蘭）──
+  { lang: "德文-新品", query: 'elektronische Nase OR Geruchssensor OR Gasanalysator neues Produkt 2024 2025', gl: 'de', hl: 'de' },
+  { lang: "法文-新品", query: 'nez électronique OR détecteur odeur OR analyseur gaz nouveau produit 2024 2025', gl: 'fr', hl: 'fr' },
+  { lang: "荷蘭文-新品", query: 'elektronische neus OR geursensor OR gasanalysator nieuw product 2024 2025', gl: 'nl', hl: 'nl' },
+];
+
+// ==========================================
+// 主流程（不變動）
+// ==========================================
+function runMarketResearch() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const existingData = sheet.getDataRange().getValues();
+  const existingProductNames = existingData.map(row => String(row[0]).toLowerCase().trim());
+  const today = new Date();
+  const formattedDate = Utilities.formatDate(today, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+
+  let allSearchContent = "";
+  console.log("🚀 開始出動 Serper 收集各國資料...");
+
+  SEARCH_TASKS.forEach(task => {
+    const searchData = fetchSerperData(task.query, task.gl, task.hl);
+    if (searchData) {
+      allSearchContent += `\n\n=== 來自 ${task.lang} 的網頁資訊 ===\n${searchData}`;
+    }
+    Utilities.sleep(1000);
+  });
+
+  if (allSearchContent === "") {
+    console.log("⚠️ 所有任務都沒有搜到資料。");
+    return;
+  }
+
+  console.log("📦 資料收集完畢，準備交給 Gemini 進行一次性大盤點...");
+
+  const extractedProducts = analyzeWithGemini(allSearchContent);
+  let addedCount = 0;
+
+  if (extractedProducts && extractedProducts.length > 0) {
+    extractedProducts.forEach(product => {
+      const pName = String(product.product_name).toLowerCase().trim();
+      if (!existingProductNames.includes(pName) && product.product_name !== "無" && product.product_name !== "") {
+        sheet.appendRow([product.product_name, product.brand, product.features, product.url, formattedDate]);
+        existingProductNames.push(pName);
+        addedCount++;
+      }
+    });
+    console.log(`✅ 全球盤點完成！本次共新增了 ${addedCount} 筆新產品。`);
+  } else {
+    console.log(`⚠️ Gemini 分析完畢，但沒有發現符合條件的新產品。`);
+  }
+}
+
+// ==========================================
+// Serper 搜尋（不變動）
+// ==========================================
+function fetchSerperData(query, gl, hl) {
+  const url = 'https://google.serper.dev/search';
+  const payload = { "q": query, "gl": gl, "hl": hl, "num": 10 };
+  const options = {
+    'method': 'post',
+    'headers': { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const json = JSON.parse(response.getContentText());
+    if (json.organic && json.organic.length > 0) {
+      return json.organic.map(item => `標題: ${item.title}\n摘要: ${item.snippet}\n網址: ${item.link}`).join('\n\n');
+    }
+  } catch (e) {
+    console.log(`Serper 搜尋錯誤 (${gl}): ` + e);
+  }
+  return null;
+}
+
+// ==========================================
+// Gemini 分析（修正 prompt 過濾條件）
+// ==========================================
+function analyzeWithGemini(searchContent) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  const prompt = `你是一個專業的醫療器材與科技產品市場分析師。
+請閱讀以下來自全球多個國家的 Google 搜尋結果，判斷其中是否有提及真實存在且市面上可購買的「氣味檢測器」、「電子鼻」、「氣體分析設備/儀器」或「氣味感測消費電子產品」。
+
+【重要】以下類型都要納入，不可遺漏：
+- 消費電子健康裝置（如口臭偵測器、體臭感測器、個人健康監測器）
+- 醫療器材（呼氣分析、疾病診斷相關）
+- 工業/環境用氣體分析設備
+- 半導體氣體感測器模組
+- 電子鼻研究或商用裝置
+- 任何含有氣體或氣味感測功能的硬體產品
+
+【排除】純學術論文、無具體產品的新聞評論、與氣味/氣體完全無關的內容。
+
+跨國搜尋結果總匯：
+${searchContent}
+
+請嚴格使用以下 JSON 陣列格式回覆，不要包含任何其他文字或 Markdown 標記：
+[
+  {
+    "product_name": "產品名稱(保留原文，並附繁體中文翻譯)",
+    "brand": "品牌或開發公司(保留原文)",
+    "features": "一句話總結產品核心特色與檢測標的(請用繁體中文)",
+    "url": "該資訊的來源網址"
+  }
+]
+如果沒有找到任何產品，請回覆 []`;
+
+  const payload = {
+    "contents": [{"parts": [{"text": prompt}]}],
+    "generationConfig": { "response_mime_type": "application/json" }
+  };
+  const options = {
+    'method': 'post',
+    'headers': {'Content-Type': 'application/json'},
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const resultJson = JSON.parse(response.getContentText());
+    if (resultJson.error) {
+      console.log(`❌ Gemini API 發生錯誤: [${resultJson.error.code}] ${resultJson.error.message}`);
+      return [];
+    }
+    if (!resultJson.candidates) return [];
+    return JSON.parse(resultJson.candidates[0].content.parts[0].text);
+  } catch (e) {
+    console.log(`⚠️ 執行錯誤: ${e}`);
+    return [];
+  }
+}

@@ -1,0 +1,270 @@
+/** @OnlyCurrentDoc */
+
+const SERPER_API_KEY = 'YOUR_SERPER_API_KEY_HERE';
+const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE';
+
+// ==========================================
+// 搜尋任務：分為四大類
+// A. 競品普查（消費型，不限新舊）
+// B. 新品雷達（含年份限定）
+// C. 醫療呼氣檢測（新增）
+// D. 中國市場（新增）
+// ==========================================
+const SEARCH_TASKS = [
+
+  // ── A. 競品普查：消費型 ──────────────────────────────────────
+  { lang: "日文-消費品",   query: 'ブレスチェッカー OR 口臭チェッカー OR 体臭センサー OR においセンサー 製品', gl: 'jp', hl: 'ja' },
+  { lang: "日文-品牌",     query: 'TANITA においチェッカー OR ブレスチェッカー HC-212S HC-910', gl: 'jp', hl: 'ja' },
+  { lang: "日文-Amazon",   query: 'site:amazon.co.jp ブレスチェッカー OR 口臭測定器 OR 体臭チェッカー', gl: 'jp', hl: 'ja' },
+  { lang: "英文-消費品",   query: 'breath checker OR breath odor detector OR body odor sensor consumer product review', gl: 'us', hl: 'en' },
+  { lang: "英文-Amazon",   query: 'site:amazon.com breath odor tester OR halitosis detector OR body odor monitor', gl: 'us', hl: 'en' },
+  { lang: "繁中-消費品",   query: '口臭檢測器 OR 體臭偵測 OR 口氣測試 推薦 評測', gl: 'tw', hl: 'zh-tw' },
+  { lang: "韓文-消費品",   query: '구취측정기 OR 체취센서 OR 입냄새 측정 제품 추천', gl: 'kr', hl: 'ko' },
+
+  // ── B. 新品雷達 ───────────────────────────────────────────────
+  { lang: "英文-新品",     query: 'electronic nose OR odor sensor new product 2024 2025 Kickstarter CES launch', gl: 'us', hl: 'en' },
+  { lang: "日文-新品",     query: 'においセンサー OR 電子鼻 新製品 2024 2025 スマートフォン連携', gl: 'jp', hl: 'ja' },
+  { lang: "德文-新品",     query: 'elektronische Nase OR Geruchssensor OR Gasanalysator neues Produkt 2024 2025', gl: 'de', hl: 'de' },
+  { lang: "荷蘭文-新品",   query: 'elektronische neus OR geursensor OR gasanalysator nieuw product 2024 2025', gl: 'nl', hl: 'nl' },
+
+  // ── C. 醫療呼氣檢測（新增）───────────────────────────────────
+  // C-1 一氧化氮 FeNO（氣喘診斷）
+  { lang: "英文-FeNO",     query: 'fractional exhaled nitric oxide FeNO device asthma diagnosis portable 2024 2025', gl: 'us', hl: 'en' },
+  { lang: "英文-FeNO品牌", query: 'NIOX Vero OR Circassia FeNO OR spirometry breath analyzer asthma', gl: 'us', hl: 'en' },
+
+  // C-2 碳13同位素 UBT（幽門桿菌）
+  { lang: "英文-C13",      query: 'C13 urea breath test UBT H.pylori device portable point of care', gl: 'us', hl: 'en' },
+  { lang: "英文-C13品牌",  query: 'BreathID OR Exalenz OR Otsuka C13 breath test analyzer', gl: 'us', hl: 'en' },
+
+  // C-3 氫氣/甲烷/H2S（腸道菌/SIBO）
+  { lang: "英文-腸道氣體", query: 'hydrogen breath test SIBO device OR methane breath test OR H2S gut microbiome analyzer', gl: 'us', hl: 'en' },
+  { lang: "英文-腸道品牌", query: 'QuinTron breathtracker OR FoodMarble AIRE OR Gemelli Biotech SIBO breath test', gl: 'us', hl: 'en' },
+
+  // C-4 呼氣代謝體 / VOC 疾病診斷
+  { lang: "英文-呼氣代謝", query: 'exhaled breath metabolomics VOC disease diagnosis breath biopsy device 2024 2025', gl: 'us', hl: 'en' },
+  { lang: "英文-Owlstone",  query: 'Owlstone Medical breath biopsy ReCIVA FAIMS lung cancer early detection', gl: 'us', hl: 'en' },
+  { lang: "英文-呼氣新創", query: 'breath analysis startup funding cancer detection acetone ketone exhaled 2024 2025', gl: 'us', hl: 'en' },
+
+  // C-5 酒測 / 生酮呼氣
+  { lang: "英文-生酮",     query: 'ketone breath meter acetone breath analyzer keto diet device bluetooth', gl: 'us', hl: 'en' },
+  { lang: "英文-酒測",     query: 'personal breathalyzer alcohol breath tester consumer 2024 2025 smartphone', gl: 'us', hl: 'en' },
+
+  // C-6 醫療呼氣中文
+  { lang: "繁中-醫療呼氣", query: '呼氣檢測 OR 吐氣分析 OR 幽門桿菌呼氣 OR 一氧化氮 氣喘 檢測儀器', gl: 'tw', hl: 'zh-tw' },
+
+  // ── D. 中國市場（新增）───────────────────────────────────────
+  // D-1 百度搜尋（需用簡體中文關鍵字）
+  { lang: "簡中-口氣健康", query: '口气检测仪 OR 口臭检测器 OR 口气传感器 产品 购买', gl: 'cn', hl: 'zh-cn' },
+  { lang: "簡中-體臭健康", query: '体臭检测 OR 气味传感器 亚健康 人体气味检测 产品', gl: 'cn', hl: 'zh-cn' },
+  { lang: "簡中-電子鼻",   query: '电子鼻 OR 嗅觉传感器 OR 气体检测仪 消费品 2024 2025', gl: 'cn', hl: 'zh-cn' },
+  { lang: "簡中-呼氣醫療", query: '呼气检测 OR 呼气分析仪 OR 幽门杆菌呼气 OR 一氧化氮检测 医疗设备', gl: 'cn', hl: 'zh-cn' },
+  { lang: "簡中-酮體酒精", query: '酮体检测仪 OR 生酮饮食检测 OR 酒精呼气检测仪 蓝牙 手机', gl: 'cn', hl: 'zh-cn' },
+  // D-2 鎖定中國電商平台
+  { lang: "簡中-淘寶天貓", query: 'site:taobao.com OR site:tmall.com 口气检测仪 OR 电子鼻 OR 气味传感器', gl: 'cn', hl: 'zh-cn' },
+  // D-3 鎖定 Shownovo 同類競品
+  { lang: "簡中-Shownovo類", query: 'shownovo OR 口臭仪 OR 生酮仪 OR 酒精检测仪 呼气 便携 蓝牙 APP', gl: 'cn', hl: 'zh-cn' },
+  // D-4 英文搜中國品牌（部分中國廠商有英文網站）
+  { lang: "英文-中國品牌",  query: 'China breath analyzer OR halitosis detector manufacturer OEM ODM 2024', gl: 'us', hl: 'en' },
+  { lang: "英文-Alibaba",   query: 'site:alibaba.com breath odor sensor OR electronic nose OR gas detector portable', gl: 'us', hl: 'en' },
+];
+
+// ==========================================
+// 主流程（不變動）
+// ==========================================
+function runMarketResearch() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  const existingData = sheet.getDataRange().getValues();
+  const existingProductNames = existingData.map(row => String(row[0]).toLowerCase().trim());
+  const today = new Date();
+  const formattedDate = Utilities.formatDate(today, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+
+  let allSearchContent = "";
+  console.log("🚀 開始搜尋，共 " + SEARCH_TASKS.length + " 個任務...");
+
+  SEARCH_TASKS.forEach((task, i) => {
+    console.log(`  [${i+1}/${SEARCH_TASKS.length}] ${task.lang}`);
+    const searchData = fetchSerperData(task.query, task.gl, task.hl);
+    if (searchData) {
+      allSearchContent += `\n\n=== 來自 ${task.lang} 的網頁資訊 ===\n${searchData}`;
+    }
+    Utilities.sleep(1000);
+  });
+
+  if (allSearchContent === "") {
+    console.log("⚠️ 所有任務都沒有搜到資料。");
+    return;
+  }
+
+  console.log("📦 資料收集完畢，交給 Gemini 分析...");
+
+  const extractedProducts = analyzeWithGemini(allSearchContent);
+  let addedCount = 0;
+
+  if (extractedProducts && extractedProducts.length > 0) {
+    extractedProducts.forEach(product => {
+      const pName = String(product.product_name).toLowerCase().trim();
+      if (!existingProductNames.includes(pName) && product.product_name !== "無" && product.product_name !== "") {
+        sheet.appendRow([product.product_name, product.brand, product.features, product.url, formattedDate]);
+        existingProductNames.push(pName);
+        addedCount++;
+      }
+    });
+    console.log(`✅ 完成！本次新增 ${addedCount} 筆。`);
+  } else {
+    console.log(`⚠️ Gemini 分析完畢，無新產品。`);
+  }
+
+  // 每次執行後，額外產出一份 RAG 關鍵字建議（寫入第二個工作表）
+  generateRagKeywords(allSearchContent);
+}
+
+// ==========================================
+// Serper 搜尋（不變動）
+// ==========================================
+function fetchSerperData(query, gl, hl) {
+  const url = 'https://google.serper.dev/search';
+  const payload = { "q": query, "gl": gl, "hl": hl, "num": 10 };
+  const options = {
+    'method': 'post',
+    'headers': { 'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json' },
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const json = JSON.parse(response.getContentText());
+    if (json.organic && json.organic.length > 0) {
+      return json.organic.map(item => `標題: ${item.title}\n摘要: ${item.snippet}\n網址: ${item.link}`).join('\n\n');
+    }
+  } catch (e) {
+    console.log(`Serper 錯誤 (${gl}): ` + e);
+  }
+  return null;
+}
+
+// ==========================================
+// Gemini 分析（強化 prompt，涵蓋醫療與中國市場）
+// ==========================================
+function analyzeWithGemini(searchContent) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  const prompt = `你是專業的醫療器材與氣味科技產品市場分析師。
+請閱讀以下來自全球多個國家（包含中國大陸）的 Google 搜尋結果，找出所有真實存在的相關硬體產品。
+
+【納入範圍，以下全部要收錄】
+1. 消費電子健康裝置：口臭偵測器、體臭感測器、個人健康監測器
+2. 醫療呼氣分析設備：
+   - FeNO 一氧化氮檢測（氣喘診斷，如 NIOX Vero）
+   - C13 尿素呼氣試驗（幽門桿菌，如 BreathID）
+   - 氫氣/甲烷/H2S 呼氣檢測（腸道菌/SIBO，如 FoodMarble）
+   - 呼氣代謝體/VOC 疾病診斷（如 Owlstone Medical ReCIVA）
+   - 呼氣酒精/生酮/丙酮檢測
+3. 工業/環境用氣體分析設備與電子鼻
+4. 中國品牌產品（包含簡體中文描述的產品，品牌名保留原文）
+5. 感測器模組（可嵌入其他裝置的氣體感測元件）
+
+【排除】純學術論文、無具體產品的評論文章、與氣味/氣體完全無關的內容。
+
+搜尋結果總匯：
+${searchContent}
+
+請嚴格使用以下 JSON 陣列格式，不含任何其他文字或 Markdown：
+[
+  {
+    "product_name": "產品名稱（保留原文並附繁體中文翻譯，中國品牌保留簡體原名）",
+    "brand": "品牌或公司名稱（保留原文）",
+    "features": "一句話說明核心功能與檢測標的（繁體中文）",
+    "url": "來源網址"
+  }
+]
+找不到任何產品請回覆 []`;
+
+  const payload = {
+    "contents": [{"parts": [{"text": prompt}]}],
+    "generationConfig": { "response_mime_type": "application/json" }
+  };
+  const options = {
+    'method': 'post',
+    'headers': {'Content-Type': 'application/json'},
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const resultJson = JSON.parse(response.getContentText());
+    if (resultJson.error) {
+      console.log(`❌ Gemini 錯誤: [${resultJson.error.code}] ${resultJson.error.message}`);
+      return [];
+    }
+    if (!resultJson.candidates) return [];
+    return JSON.parse(resultJson.candidates[0].content.parts[0].text);
+  } catch (e) {
+    console.log(`⚠️ 執行錯誤: ${e}`);
+    return [];
+  }
+}
+
+// ==========================================
+// RAG 關鍵字知識圖產生器（新增）
+// 每次執行後自動更新「RAG關鍵字」工作表
+// ==========================================
+function generateRagKeywords(searchContent) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let ragSheet = ss.getSheetByName("RAG關鍵字");
+  if (!ragSheet) {
+    ragSheet = ss.insertSheet("RAG關鍵字");
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  const prompt = `根據以下氣味/氣體檢測產業的搜尋資料，產出一份供 RAG（知識圖譜）使用的關鍵字分類清單。
+請以 JSON 格式輸出，涵蓋以下六個維度，每個維度列出 10–20 個關鍵詞（中英文混合，保留專業術語原文）：
+
+搜尋資料：
+${searchContent.substring(0, 8000)}
+
+請輸出以下 JSON 結構：
+{
+  "技術原理": ["MOS", "MEMS", "GC-MS", "NDIR", "FeNO", "C13-UBT", ...],
+  "目標氣體分子": ["H2S", "NH3", "VOCs", "NO", "H2", "CH4", "丙酮", "乙醇", ...],
+  "應用場景": ["口臭檢測", "氣喘診斷", "幽門桿菌", "SIBO腸道", "生酮監測", "工業安全", ...],
+  "品牌與公司": ["TANITA", "Owlstone Medical", "FoodMarble", "Shownovo", ...],
+  "搜尋關鍵字建議": ["breath analyzer", "ブレスチェッカー", "口气检测仪", "呼気分析", ...],
+  "新興趨勢": ["呼氣代謝體", "breath biopsy", "wearable odor", "AI氣味辨識", ...]
+}`;
+
+  const payload = {
+    "contents": [{"parts": [{"text": prompt}]}],
+    "generationConfig": { "response_mime_type": "application/json" }
+  };
+  const options = {
+    'method': 'post',
+    'headers': {'Content-Type': 'application/json'},
+    'payload': JSON.stringify(payload),
+    'muteHttpExceptions': true
+  };
+
+  try {
+    const response = UrlFetchApp.fetch(url, options);
+    const resultJson = JSON.parse(response.getContentText());
+    if (!resultJson.candidates) return;
+
+    const keywords = JSON.parse(resultJson.candidates[0].content.parts[0].text);
+    const today = new Date();
+    const formattedDate = Utilities.formatDate(today, Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm");
+
+    ragSheet.clearContents();
+    ragSheet.appendRow(["維度", "關鍵詞", "更新時間"]);
+
+    Object.entries(keywords).forEach(([dimension, words]) => {
+      words.forEach(word => {
+        ragSheet.appendRow([dimension, word, formattedDate]);
+      });
+    });
+
+    console.log(`📚 RAG 關鍵字已更新至「RAG關鍵字」工作表，共 ${Object.values(keywords).flat().length} 筆。`);
+  } catch (e) {
+    console.log(`⚠️ RAG 關鍵字產生失敗: ${e}`);
+  }
+}
